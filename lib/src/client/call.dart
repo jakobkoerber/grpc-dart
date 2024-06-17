@@ -16,6 +16,7 @@
 import 'dart:async';
 import 'dart:developer';
 
+import '../../grpc.dart';
 import '../shared/codec.dart';
 import '../shared/message.dart';
 import '../shared/profiler.dart';
@@ -55,11 +56,11 @@ class CallOptions {
   final Codec? compression;
 
   CallOptions._(
-    this.metadata,
-    this.timeout,
-    this.metadataProviders,
-    this.compression,
-  );
+      this.metadata,
+      this.timeout,
+      this.metadataProviders,
+      this.compression,
+      );
 
   /// Creates a [CallOptions] object.
   ///
@@ -118,6 +119,7 @@ class WebCallOptions extends CallOptions {
   /// This may be required for proxying or wherever the server
   /// needs to otherwise inspect client cookies for that domain.
   final bool? withCredentials;
+
   // TODO(mightyvoice): add a list of extra QueryParameter for gRPC.
 
   WebCallOptions._(Map<String, String> metadata, Duration? timeout,
@@ -132,10 +134,10 @@ class WebCallOptions extends CallOptions {
   /// [withCredentials] for CORS request.
   factory WebCallOptions(
       {Map<String, String>? metadata,
-      Duration? timeout,
-      List<MetadataProvider>? providers,
-      bool? bypassCorsPreflight,
-      bool? withCredentials}) {
+        Duration? timeout,
+        List<MetadataProvider>? providers,
+        bool? bypassCorsPreflight,
+        bool? withCredentials}) {
     return WebCallOptions._(Map.unmodifiable(metadata ?? {}), timeout,
         List.unmodifiable(providers ?? []),
         bypassCorsPreflight: bypassCorsPreflight ?? false,
@@ -192,7 +194,31 @@ class ClientCall<Q, R> implements Response {
   TimelineTask? _responseTimeline;
 
   ClientCall(this._method, this._requests, this.options,
-      [this._requestTimeline]) {
+      [this._requestTimeline, Future<R?>? isCached]) {
+    checkForCacheResponse(isCached);
+  }
+
+  Future<void> checkForCacheResponse(Future<R?>? isCached) async {
+    if (isCached != null) {
+      final data = await isCached;
+      if (data != null) {
+        _responses.add(
+          ClientMethod(
+            _method.path,
+                (value) => [],
+                (value) => data,
+          ).responseDeserializer([]),
+        );
+        _onCacheDone();
+      } else {
+        defaultCall();
+      }
+    } else {
+      defaultCall();
+    }
+  }
+
+  void defaultCall() {
     _requestTimeline?.start('gRPC Request: ${_method.path}', arguments: {
       'method': _method.path,
       'timeout': options.timeout?.toString(),
@@ -209,7 +235,7 @@ class ClientCall<Q, R> implements Response {
 
   void _terminateWithError(Object e) {
     final error =
-        e is GrpcError ? e : GrpcError.unavailable('Error making call: $e');
+    e is GrpcError ? e : GrpcError.unavailable('Error making call: $e');
     _finishTimelineWithError(error, _requestTimeline);
     _responses.addErrorIfNotClosed(error);
     _safeTerminate();
@@ -243,9 +269,9 @@ class ClientCall<Q, R> implements Response {
     } else {
       final metadata = Map<String, String>.from(options.metadata);
       Future.forEach(
-              options.metadataProviders,
+          options.metadataProviders,
               (MetadataProvider provider) => provider(metadata,
-                  '${connection.scheme}://${connection.authority}${audiencePath(_method)}'))
+              '${connection.scheme}://${connection.authority}${audiencePath(_method)}'))
           .then((_) => _sendRequest(connection, _sanitizeMetadata(metadata)))
           .catchError(_terminateWithError);
     }
@@ -270,17 +296,17 @@ class ClientCall<Q, R> implements Response {
     });
     _requestSubscription = _requests
         .map((data) {
-          _requestTimeline?.instant('Data sent', arguments: {
-            'data': data.toString(),
-          });
-          _requestTimeline?.finish();
-          return _method.requestSerializer(data);
-        })
+      _requestTimeline?.instant('Data sent', arguments: {
+        'data': data.toString(),
+      });
+      _requestTimeline?.finish();
+      return _method.requestSerializer(data);
+    })
         .handleError(_onRequestError)
         .listen(stream.outgoingMessages.add,
-            onError: stream.outgoingMessages.addError,
-            onDone: stream.outgoingMessages.close,
-            cancelOnError: true);
+        onError: stream.outgoingMessages.addError,
+        onDone: stream.outgoingMessages.close,
+        cancelOnError: true);
     _stream = stream;
     // The response stream might have been listened to before _stream was ready,
     // so try setting up the subscription here as well.
@@ -430,7 +456,14 @@ class ClientCall<Q, R> implements Response {
     _responseTimeline?.finish();
     _timeoutTimer?.cancel();
     _responses.close();
-    _responseSubscription!.cancel();
+    _responseSubscription?.cancel();
+  }
+
+  void _onCacheDone() {
+    _responseTimeline?.finish();
+    _timeoutTimer?.cancel();
+    _responses.close();
+    _responseSubscription?.cancel();
   }
 
   /// Error handler for the requests stream. Something went wrong while trying
