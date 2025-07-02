@@ -1,3 +1,22 @@
+## 4.2.0-wip
+
+- Require Dart 3.8.
+- Export a protobuf generated symbol (`Any`)
+- Dart format all files for the new 3.8 formatter.
+- Require package:googleapis_auth
+- Require package:http 1.4.0
+- Require package:lints 6.0.0
+- Require package:protobuf 4.1.0
+- Simplify hierarchy of `ResponseFuture` (no longer have a private class in the
+  type hierarchy)
+
+## 4.1.0
+
+* Add a `serverInterceptors` argument to `ConnectionServer`. These interceptors
+  are acting as middleware, wrapping a `ServiceMethod` invocation.
+* Make sure that `CallOptions.mergeWith` is symmetric: given `WebCallOptions`
+  it should return `WebCallOptions`.
+
 ## 4.0.4
 
 * Allow the latest `package:googleapis_auth`.
@@ -10,8 +29,8 @@
 
 * Internal optimization to client code.
 * Small fixes, such as ports in testing and enabling `timeline_test.dart`.
-* When the keep alive manager runs into a timeout, it will finish the transport instead of closing
-  the connection, as defined in the gRPC spec.
+* When the keep alive manager runs into a timeout, it will finish the transport
+  instead of closing the connection, as defined in the gRPC spec.
 * Upgrade to `package:lints` version 5.0.0 and Dart SDK version 3.5.0.
 * Upgrade `example/grpc-web` code.
 * Update xhr transport to migrate off legacy JS/HTML apis.
